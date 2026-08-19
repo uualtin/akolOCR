@@ -1,0 +1,17 @@
+.env
+.git
+.venv
+.venv-python39-backup
+.pytest_cache
+__pycache__
+.env
+.env.*
+!.env.example
+.git
+secrets
+docker/cloudflared/credentials.json
+docker/cloudflared/config.yml
+data/*.db
+data/spool
+__pycache__
+data/*.db

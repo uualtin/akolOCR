@@ -1,0 +1,1 @@
+"""ANPR gate MVP application."""

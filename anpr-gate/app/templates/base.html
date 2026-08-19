@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}ANPR Gate{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+</head>
+<body hx-boost="true">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"></span><span>ANPR Gate</span></div>
+    <nav>
+      <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+      <a href="/events" class="{% if request.url.path.startswith('/events') %}active{% endif %}">Audit</a>
+      <a href="/access-list" class="{% if request.url.path.startswith('/access-list') %}active{% endif %}">Access List</a>
+      <a href="/system" class="{% if request.url.path == '/system' %}active{% endif %}">Sistem</a>
+    </nav>
+    <form method="post" action="/logout" class="logout-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="ghost" type="submit">Çıkış · {{ session.username }}</button>
+    </form>
+  </aside>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
