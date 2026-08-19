@@ -1,7 +1,0 @@
-tunnel: REPLACE_WITH_TUNNEL_UUID
-credentials-file: /run/secrets/cloudflare_credentials.json
-
-ingress:
-  - hostname: gate.example.com
-    service: http://web:8000
-  - service: http_status:404

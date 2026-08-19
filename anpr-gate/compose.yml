@@ -1,0 +1,15 @@
+services:
+  anpr-gate:
+    build: .
+    image: anpr-gate:mvp
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

@@ -4,7 +4,7 @@ import time
 
 from .anpr.normalize import normalize_plate
 from .anpr.recognizer import Detection
-from .authorization.service import AuthorizationService
+from .authorization.database import PlateDatabase
 from .trigger.base import GateTrigger
 
 
@@ -24,19 +24,18 @@ class Cooldown:
 class AnprPipeline:
     def __init__(
         self,
-        min_confidence: float,
-        authorization_enabled: bool,
-        authorization: AuthorizationService,
+        *,
+        database: PlateDatabase,
         trigger: GateTrigger,
+        min_confidence: float,
         cooldown_seconds: float,
         min_plate_length: int = 5,
         detection_confirm_frames: int = 2,
         detection_confirm_seconds: float = 2.0,
     ) -> None:
-        self.min_confidence = min_confidence
-        self.authorization_enabled = authorization_enabled
-        self.authorization = authorization
+        self.database = database
         self.trigger = trigger
+        self.min_confidence = min_confidence
         self.cooldown = Cooldown(cooldown_seconds)
         self.min_plate_length = min_plate_length
         self.detection_confirm_frames = max(1, detection_confirm_frames)
@@ -48,18 +47,13 @@ class AnprPipeline:
         hits, last_seen = self._candidates.get(plate, (0, 0.0))
         if now - last_seen > self.detection_confirm_seconds:
             hits = 0
-        hits += 1
-        self._candidates[plate] = (hits, now)
-
-        expired = [
-            candidate
-            for candidate, (_, seen_at) in self._candidates.items()
-            if now - seen_at > self.detection_confirm_seconds
-        ]
-        for candidate in expired:
-            self._candidates.pop(candidate, None)
-
-        return hits >= self.detection_confirm_frames
+        self._candidates[plate] = (hits + 1, now)
+        self._candidates = {
+            candidate: value
+            for candidate, value in self._candidates.items()
+            if now - value[1] <= self.detection_confirm_seconds
+        }
+        return hits + 1 >= self.detection_confirm_frames
 
     def process(self, detections: list[Detection]) -> list[Detection]:
         normalized_detections: list[Detection] = []
@@ -72,25 +66,13 @@ class AnprPipeline:
             normalized_detections.append(normalized)
             if detection.confidence < self.min_confidence:
                 continue
-
-            if not self._is_confirmed(plate):
-                print(f"[CANDIDATE] plate={plate} waiting=confirmation", flush=True)
+            if not self._is_confirmed(plate) or self.cooldown.is_active(plate):
+                continue
+            if not self.database.contains(plate):
+                print(f"[DENIED] plate={plate}", flush=True)
                 continue
 
-            if self.cooldown.is_active(plate):
-                continue
-
-            print(
-                f"[ANPR] plate={plate} confidence={detection.confidence:.2f}",
-                flush=True,
-            )
-
-            if self.authorization_enabled:
-                if not self.authorization.is_allowed(plate):
-                    print(f"[DENIED] plate={plate}", flush=True)
-                    continue
-                print(f"[AUTHORIZED] plate={plate}", flush=True)
-
+            self.database.add_audit(plate)
             self.trigger.open(plate)
             self.cooldown.mark(plate)
 

@@ -8,10 +8,11 @@ from .base import GateTrigger
 
 
 class HttpGateTrigger(GateTrigger):
-    def __init__(self, url: str, timeout_seconds: float = 3.0) -> None:
+    def __init__(self, url: str, gate_id: str = "gate", timeout_seconds: float = 3.0) -> None:
         if not url:
             raise ValueError("GATE_TRIGGER_URL is required when TRIGGER_TYPE=http")
         self.url = url
+        self.gate_id = gate_id
         self.timeout_seconds = timeout_seconds
 
     def open(self, plate: str) -> None:
@@ -24,6 +25,13 @@ class HttpGateTrigger(GateTrigger):
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 response.read()
-            print(f"[GATE_TRIGGER] HTTP OPEN plate={plate}", flush=True)
+            print(
+                f"[GATE_TRIGGER] gate={self.gate_id} action=OPEN plate={plate}",
+                flush=True,
+            )
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            print(f"[GATE_TRIGGER] ERROR plate={plate} error={exc}", flush=True)
+            print(
+                f"[GATE_TRIGGER] gate={self.gate_id} action=OPEN "
+                f"plate={plate} error={exc}",
+                flush=True,
+            )

@@ -8,12 +8,10 @@ import time
 import cv2
 import numpy as np
 
-from .base import Camera
-
 logger = logging.getLogger("anpr.camera.rtsp")
 
 
-class RtspCamera(Camera):
+class RtspCamera:
     def __init__(
         self,
         url: str,

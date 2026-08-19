@@ -1,6 +1,0 @@
-{% extends "base.html" %}{% block title %}Olay detayı · ANPR Gate{% endblock %}
-{% block content %}
-<header class="page-header"><div><span class="eyebrow">OLAY {{ event.id }}</span><h1>{{ event.plate or 'Manuel açma' }}</h1></div><span class="pill {{ 'ok' if event.trigger_status=='success' else 'bad' }}">{{ event.trigger_status }}</span></header>
-<section class="detail-grid panel"><dl><dt>Zaman</dt><dd>{{ event.occurred_at|local_time }}</dd><dt>Kaynak</dt><dd>{{ event.source }}</dd><dt>Kamera</dt><dd>{{ event.camera_id or '—' }}</dd><dt>Gate</dt><dd>{{ event.gate_id }}</dd><dt>Confidence</dt><dd>{{ event.confidence or '—' }}</dd><dt>Trigger süresi</dt><dd>{{ event.trigger_duration_ms or 0 }} ms</dd><dt>Gerekçe</dt><dd>{{ event.manual_reason or '—' }}</dd><dt>İsteyen kullanıcı</dt><dd>{{ event.requested_by or '—' }}</dd><dt>İstemci IP</dt><dd>{{ event.client_ip or '—' }}</dd><dt>Snapshot</dt><dd>{{ event.snapshot_status }}</dd><dt>Hata</dt><dd>{{ event.trigger_error or '—' }}</dd></dl></section>
-{% if event.full_snapshot_path %}<section class="snapshot-grid"><figure><img src="/snapshot/{{ event.id }}/full"><figcaption>İşaretli tam kare</figcaption></figure><figure><img src="/snapshot/{{ event.id }}/crop"><figcaption>Plaka crop</figcaption></figure></section>{% endif %}
-{% endblock %}
