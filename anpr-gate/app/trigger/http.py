@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .base import GateTrigger
+
+logger = logging.getLogger("anpr.gate")
 
 
 class HttpGateTrigger(GateTrigger):
@@ -25,13 +28,17 @@ class HttpGateTrigger(GateTrigger):
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 response.read()
-            print(
-                f"[GATE_TRIGGER] gate={self.gate_id} action=OPEN plate={plate}",
-                flush=True,
+            logger.info(
+                "gate=%s action=OPEN plate=%s",
+                self.gate_id,
+                plate,
+                extra={"camera_id": self.gate_id},
             )
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            print(
-                f"[GATE_TRIGGER] gate={self.gate_id} action=OPEN "
-                f"plate={plate} error={exc}",
-                flush=True,
+            logger.error(
+                "gate=%s action=OPEN plate=%s error=%s",
+                self.gate_id,
+                plate,
+                exc,
+                extra={"camera_id": self.gate_id},
             )

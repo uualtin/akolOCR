@@ -65,6 +65,17 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.get("/video-feed/unknown.mjpeg").status_code, 404)
         self.assertEqual(self.client.get("/video-feed/entry.mjpeg").status_code, 503)
 
+    def test_logs_page_and_source_filter(self):
+        self.app.state.context.log_store.append("WARNING", "entry", "camera offline")
+        self.app.state.context.log_store.append("INFO", "gate", "gate opened")
+        page = self.client.get("/logs")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Container / Servis Logları", page.text)
+        entry_logs = self.client.get("/api/logs?source=entry")
+        self.assertEqual(entry_logs.status_code, 200)
+        self.assertEqual(entry_logs.json()[0]["message"], "camera offline")
+        self.assertEqual(self.client.get("/api/logs?source=invalid").status_code, 422)
+
 
 if __name__ == "__main__":
     unittest.main()

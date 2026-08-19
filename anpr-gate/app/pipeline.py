@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from .anpr.normalize import normalize_plate
 from .anpr.recognizer import Detection
 from .authorization.database import PlateDatabase
 from .trigger.base import GateTrigger
+
+logger = logging.getLogger("anpr.pipeline")
 
 
 class Cooldown:
@@ -27,6 +30,7 @@ class AnprPipeline:
         *,
         database: PlateDatabase,
         trigger: GateTrigger,
+        camera_id: str = "system",
         min_confidence: float,
         cooldown_seconds: float,
         min_plate_length: int = 5,
@@ -35,6 +39,7 @@ class AnprPipeline:
     ) -> None:
         self.database = database
         self.trigger = trigger
+        self.camera_id = camera_id
         self.min_confidence = min_confidence
         self.cooldown = Cooldown(cooldown_seconds)
         self.min_plate_length = min_plate_length
@@ -69,10 +74,17 @@ class AnprPipeline:
             if not self._is_confirmed(plate) or self.cooldown.is_active(plate):
                 continue
             if not self.database.contains(plate):
-                print(f"[DENIED] plate={plate}", flush=True)
+                logger.info(
+                    "plate denied: %s", plate, extra={"camera_id": self.camera_id}
+                )
                 continue
 
             self.database.add_audit(plate)
+            logger.info(
+                "authorized plate audited: %s",
+                plate,
+                extra={"camera_id": self.camera_id},
+            )
             self.trigger.open(plate)
             self.cooldown.mark(plate)
 

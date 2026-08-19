@@ -35,14 +35,21 @@ nano .env
 İlk tek-kamera testinde iki URL aynı kalabilir:
 
 ```env
-ENTRY_RTSP_URL=rtsp://admin:PAROLA@192.168.254.115:554/Streaming/Channels/102
-EXIT_RTSP_URL=rtsp://admin:PAROLA@192.168.254.115:554/Streaming/Channels/102
+ENTRY_RTSP_HOST=192.168.254.115
+ENTRY_RTSP_USERNAME=admin
+ENTRY_RTSP_PASSWORD=KAMERA_PAROLASI
+ENTRY_RTSP_PATH=Streaming/Channels/102
+EXIT_RTSP_HOST=192.168.254.115
+EXIT_RTSP_USERNAME=admin
+EXIT_RTSP_PASSWORD=KAMERA_PAROLASI
+EXIT_RTSP_PATH=Streaming/Channels/102
 GATE_TRIGGER_TYPE=console
 ```
 
-RTSP parolasında `@`, `:`, `/`, `#` gibi URL karakterleri varsa parola kısmını
-percent-encode edin. Gerçek röleler doğrulanana ve giriş/çıkış kameraları ayrılana
-kadar `GATE_TRIGGER_TYPE=console` değerini değiştirmeyin.
+Uygulama kullanıcı adı ve parolayı güvenli biçimde URL-encode eder. Parolada `#`
+veya boşluk varsa `.env` içinde çift tırnak kullanın. Gerçek röleler doğrulanana
+ve giriş/çıkış kameraları ayrılana kadar `GATE_TRIGGER_TYPE=console` değerini
+değiştirmeyin.
 
 Image'ı oluşturup çalıştırın:
 
@@ -57,6 +64,27 @@ Paneli açın:
 
 ```text
 http://VM_IP_ADRESI:8000
+```
+
+Canlı uygulama logları ikinci sayfada bulunur:
+
+```text
+http://VM_IP_ADRESI:8000/logs
+```
+
+Loglar `entry`, `exit`, `gate`, `web` ve `system` olarak filtrelenebilir. Son
+1000 uygulama kaydı bellekte tutulur; container yeniden başlatılınca temizlenir.
+Docker'ın native FFmpeg stderr satırları için `docker compose logs` kullanılmaya
+devam edilir.
+
+Preview boşsa ve Docker logunda `401 Unauthorized` görünüyorsa kamera IP'sine
+ulaşılmış fakat RTSP kullanıcı adı veya parolası reddedilmiş demektir. `.env`
+değerlerini düzeltip container'ı yeniden oluşturun:
+
+```bash
+nano .env
+sudo docker compose up -d --force-recreate
+sudo docker compose logs --tail=100 -f anpr-gate
 ```
 
 Panelden access liste plaka ekleyin. Kamera bu plakayı doğruladığında audit

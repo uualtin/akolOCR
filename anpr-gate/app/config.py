@@ -3,8 +3,25 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
+
+
+def _camera_url(prefix: str, fallback: str = "") -> str:
+    explicit = os.getenv(f"{prefix}_RTSP_URL", "").strip()
+    if explicit:
+        return explicit
+    host = os.getenv(f"{prefix}_RTSP_HOST", "").strip()
+    if not host:
+        return fallback
+    username = quote(os.getenv(f"{prefix}_RTSP_USERNAME", "admin"), safe="")
+    password = quote(os.getenv(f"{prefix}_RTSP_PASSWORD", ""), safe="")
+    port = int(os.getenv(f"{prefix}_RTSP_PORT", "554"))
+    path = os.getenv(
+        f"{prefix}_RTSP_PATH", "Streaming/Channels/102"
+    ).strip().lstrip("/")
+    return f"rtsp://{username}:{password}@{host}:{port}/{path}"
 
 
 @dataclass(frozen=True)
@@ -32,8 +49,9 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv()
-        entry_url = os.getenv("ENTRY_RTSP_URL", os.getenv("RTSP_URL", "")).strip()
-        exit_url = os.getenv("EXIT_RTSP_URL", entry_url).strip()
+        legacy_url = os.getenv("RTSP_URL", "").strip()
+        entry_url = _camera_url("ENTRY", legacy_url)
+        exit_url = _camera_url("EXIT", entry_url)
         trigger_type = os.getenv("GATE_TRIGGER_TYPE", "console").strip().lower()
         if trigger_type not in {"console", "http"}:
             raise ValueError("GATE_TRIGGER_TYPE must be 'console' or 'http'")

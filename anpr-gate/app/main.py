@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -17,10 +18,13 @@ from .anpr.recognizer import PlateRecognizer
 from .authorization.database import DuplicatePlateError, PlateDatabase
 from .camera.rtsp import RtspCamera
 from .config import CameraSettings, Settings
+from .log_buffer import LogStore, WebLogHandler
 from .pipeline import AnprPipeline
 from .trigger.base import GateTrigger
 from .trigger.console import ConsoleGateTrigger
 from .trigger.http import HttpGateTrigger
+
+logger = logging.getLogger("anpr.runtime")
 
 
 class CameraRuntime:
@@ -66,9 +70,10 @@ class CameraRuntime:
                     detections = self.recognizer.recognize(frame)
                 self.pipeline.process(detections)
             except Exception as exc:
-                print(
-                    f"[ANPR_ERROR] camera={self.config.camera_id} error={exc}",
-                    flush=True,
+                logger.exception(
+                    "ANPR processing failed: %s",
+                    exc,
+                    extra={"camera_id": self.config.camera_id},
                 )
 
     def stream(self) -> Iterator[bytes]:
@@ -125,8 +130,16 @@ class ApplicationContext:
         self.start_cameras = start_cameras
         self.recognizer_lock = threading.Lock()
         self.runtimes: dict[str, CameraRuntime] = {}
+        self.log_store = LogStore()
+        self.log_handler = WebLogHandler(self.log_store)
+        self._loggers: list[logging.Logger] = []
 
     def start(self) -> None:
+        for logger_name in ("anpr", "uvicorn.access", "uvicorn.error"):
+            target = logging.getLogger(logger_name)
+            target.addHandler(self.log_handler)
+            self._loggers.append(target)
+        logging.getLogger("anpr").setLevel(logging.INFO)
         self.database.initialize()
         configured = [camera for camera in self.settings.cameras if camera.rtsp_url]
         if not self.start_cameras or not configured:
@@ -137,6 +150,7 @@ class ApplicationContext:
             pipeline = AnprPipeline(
                 database=self.database,
                 trigger=build_trigger(self.settings, camera),
+                camera_id=camera.camera_id,
                 min_confidence=self.settings.min_confidence,
                 cooldown_seconds=self.settings.trigger_cooldown_seconds,
                 min_plate_length=self.settings.min_plate_length,
@@ -157,6 +171,9 @@ class ApplicationContext:
         for runtime in self.runtimes.values():
             runtime.stop()
         self.runtimes.clear()
+        for target in self._loggers:
+            target.removeHandler(self.log_handler)
+        self._loggers.clear()
 
 
 def dashboard_html(plates: list[dict[str, int | str]], message: str = "") -> str:
@@ -182,6 +199,9 @@ def dashboard_html(plates: list[dict[str, int | str]], message: str = "") -> str
     * {{ box-sizing:border-box }} body {{ margin:0; background:var(--bg); color:var(--text);
       font:15px system-ui,sans-serif }} main {{ width:min(1400px,94vw); margin:28px auto 60px }}
     h1,h2 {{ margin:0 0 14px }} h1 {{ font-size:1.45rem }} h2 {{ font-size:1rem }}
+    header {{ display:flex; justify-content:space-between; align-items:center }}
+    nav {{ display:flex; gap:8px }} nav a {{ color:var(--green); text-decoration:none;
+      border:1px solid var(--line); padding:8px 12px; border-radius:7px }}
     .cameras,.bottom {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px }}
     .panel {{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px }}
     img {{ display:block; width:100%; aspect-ratio:16/9; object-fit:contain; background:#000;
@@ -197,7 +217,7 @@ def dashboard_html(plates: list[dict[str, int | str]], message: str = "") -> str
   </style>
 </head>
 <body><main>
-  <h1>ANPR Gate</h1>{notice}
+  <header><h1>ANPR Gate</h1><nav><a href="/">Dashboard</a><a href="/logs">Logs</a></nav></header>{notice}
   <section class="cameras">
     <article class="panel"><p class="label">Giriş kamerası</p>
       <img src="/video-feed/entry.mjpeg" alt="Giriş kamerası"></article>
@@ -239,6 +259,51 @@ refreshAudit(); setInterval(refreshAudit, 2000);
 </script></body></html>"""
 
 
+def logs_html() -> str:
+    return """<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ANPR Gate · Logs</title>
+<style>
+:root{color-scheme:dark;--bg:#08110b;--panel:#101d14;--line:#294b34;--text:#effff3;
+--muted:#9eb4a4;--green:#35df78;--red:#ff6b6b;--amber:#ffc65c}*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif}
+main{width:min(1400px,94vw);margin:28px auto}header{display:flex;justify-content:space-between;
+align-items:center;margin-bottom:18px}h1{font-size:1.45rem;margin:0}nav{display:flex;gap:8px}
+a,button{color:var(--green);background:transparent;border:1px solid var(--line);padding:8px 12px;
+border-radius:7px;text-decoration:none;cursor:pointer}button.active{background:#173c25;border-color:var(--green)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.panel{background:var(--panel);
+border:1px solid var(--line);border-radius:12px;overflow:auto;max-height:75vh}table{width:100%;
+border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:var(--panel);color:var(--muted)}td.message{font-family:ui-monospace,
+SFMono-Regular,monospace;white-space:pre-wrap}.ERROR{color:var(--red)}.WARNING{color:var(--amber)}
+.empty{color:var(--muted)}</style></head><body><main>
+<header><h1>Container / Servis Logları</h1><nav><a href="/">Dashboard</a><a href="/logs">Logs</a></nav></header>
+<div class="filters" id="filters">
+<button class="active" data-source="all">Tümü</button><button data-source="entry">Entry</button>
+<button data-source="exit">Exit</button><button data-source="gate">Gate</button>
+<button data-source="web">Web</button><button data-source="system">System</button></div>
+<div class="panel"><table><thead><tr><th>Sysdate</th><th>Level</th><th>Servis</th><th>Mesaj</th></tr></thead>
+<tbody id="logs"><tr><td colspan="4" class="empty">Yükleniyor…</td></tr></tbody></table></div>
+</main><script>
+let source='all';
+document.getElementById('filters').addEventListener('click', event => {
+  const button=event.target.closest('button'); if(!button)return; source=button.dataset.source;
+  document.querySelectorAll('#filters button').forEach(item=>item.classList.toggle('active',item===button));
+  refreshLogs();
+});
+async function refreshLogs(){
+  try{const response=await fetch(`/api/logs?source=${source}&limit=300`,{cache:'no-store'});
+  const items=await response.json();const body=document.getElementById('logs');body.replaceChildren();
+  if(!items.length){const row=body.insertRow();const cell=row.insertCell();cell.colSpan=4;cell.className='empty';
+  cell.textContent='Henüz log yok.';return}for(const item of items){const row=body.insertRow();
+  row.insertCell().textContent=item.sysdate;const level=row.insertCell();level.textContent=item.level;
+  level.className=item.level;row.insertCell().textContent=item.source;const message=row.insertCell();
+  message.className='message';message.textContent=item.message}}catch(_){}}
+refreshLogs();setInterval(refreshLogs,2000);
+</script></body></html>"""
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -263,6 +328,10 @@ def create_app(
     def dashboard(message: str = "") -> str:
         return dashboard_html(context.database.list_plates(), message)
 
+    @application.get("/logs", response_class=HTMLResponse)
+    def logs_page() -> str:
+        return logs_html()
+
     @application.get("/video-feed/{camera_id}.mjpeg")
     def video_feed(camera_id: str) -> StreamingResponse:
         if camera_id not in {"entry", "exit"}:
@@ -277,6 +346,15 @@ def create_app(
     @application.get("/api/audit")
     def audit(limit: Annotated[int, Query(ge=1, le=200)] = 50):
         return context.database.recent_audit(limit)
+
+    @application.get("/api/logs")
+    def logs(
+        source: Annotated[
+            str, Query(pattern="^(all|entry|exit|gate|web|system)$")
+        ] = "all",
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ):
+        return context.log_store.recent(source, limit)
 
     @application.post("/plates")
     def add_plate(plate: Annotated[str, Form()]):

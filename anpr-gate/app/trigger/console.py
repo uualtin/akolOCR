@@ -1,4 +1,8 @@
+import logging
+
 from .base import GateTrigger
+
+logger = logging.getLogger("anpr.gate")
 
 
 class ConsoleGateTrigger(GateTrigger):
@@ -6,4 +10,9 @@ class ConsoleGateTrigger(GateTrigger):
         self.gate_id = gate_id
 
     def open(self, plate: str) -> None:
-        print(f"[GATE_TRIGGER] gate={self.gate_id} action=OPEN plate={plate}", flush=True)
+        logger.info(
+            "gate=%s action=OPEN plate=%s",
+            self.gate_id,
+            plate,
+            extra={"camera_id": self.gate_id},
+        )

@@ -16,12 +16,14 @@ class RtspCamera:
         self,
         url: str,
         reconnect_seconds: float = 2.0,
+        max_reconnect_seconds: float = 30.0,
         name: str = "rtsp",
     ) -> None:
         if not url:
             raise ValueError("RTSP_URL is required when CAMERA_TYPE=rtsp")
         self.url = url
         self.reconnect_seconds = reconnect_seconds
+        self.max_reconnect_seconds = max_reconnect_seconds
         self.name = name
         self._capture: cv2.VideoCapture | None = None
         self._capture_lock = threading.Lock()
@@ -32,6 +34,7 @@ class RtspCamera:
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
         self._reconnect_count = 0
+        self._consecutive_failures = 0
         self._last_frame_at: float | None = None
 
     def _create_capture(self) -> cv2.VideoCapture:
@@ -77,14 +80,18 @@ class RtspCamera:
 
             if not capture.isOpened():
                 self._reconnect_count += 1
+                self._consecutive_failures += 1
+                retry_delay = self._retry_delay()
                 logger.warning(
-                    "RTSP connection failed; retry scheduled",
-                    extra={"camera_id": self.name, "reconnect_seconds": self.reconnect_seconds},
+                    "RTSP connection failed; retry in %.0fs",
+                    retry_delay,
+                    extra={"camera_id": self.name, "reconnect_seconds": retry_delay},
                 )
                 self._close_capture(capture)
-                self._stop_event.wait(self.reconnect_seconds)
+                self._stop_event.wait(retry_delay)
                 continue
 
+            self._consecutive_failures = 0
             logger.info(
                 "RTSP connected",
                 extra={"camera_id": self.name, "transport": "tcp"},
@@ -102,11 +109,18 @@ class RtspCamera:
             self._close_capture(capture)
             if not self._stop_event.is_set():
                 self._reconnect_count += 1
+                self._consecutive_failures += 1
+                retry_delay = self._retry_delay()
                 logger.warning(
-                    "RTSP connection lost; retry scheduled",
-                    extra={"camera_id": self.name, "reconnect_seconds": self.reconnect_seconds},
+                    "RTSP connection lost; retry in %.0fs",
+                    retry_delay,
+                    extra={"camera_id": self.name, "reconnect_seconds": retry_delay},
                 )
-                self._stop_event.wait(self.reconnect_seconds)
+                self._stop_event.wait(retry_delay)
+
+    def _retry_delay(self) -> float:
+        multiplier = 2 ** min(max(self._consecutive_failures - 1, 0), 4)
+        return min(self.reconnect_seconds * multiplier, self.max_reconnect_seconds)
 
     def _close_capture(self, capture: cv2.VideoCapture) -> None:
         with self._capture_lock:
